@@ -9,14 +9,14 @@ export function getModeComparison(distance) {
       safety: "Medium"
     },
     {
-      mode: "Shuttle 🚌",
+      mode: "Shared Auto 🚌",
       time: Math.round(distance * 10) + " mins",
       cost: "₹20",
       carbon: "High Saving",
       safety: "High"
     },
     {
-      mode: "Auto 🚕",
+      mode: "Personal Auto 🚕",
       time: Math.round(distance * 7) + " mins",
       cost: "₹30",
       carbon: "Low Saving",

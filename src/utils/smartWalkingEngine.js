@@ -25,7 +25,7 @@ export const getSmartRecommendation = ({
   // 🔴 Bad weather or late night
   if (rain || temperature > 38 || hour >= 20) {
     return {
-      mode: "Shared Shuttle 🚐",
+      mode: "Shared Auto",
       reason: "Weather or time not suitable for walking."
     };
   }
