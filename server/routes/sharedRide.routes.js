@@ -26,6 +26,10 @@ const {
   sendMessage,
   confirmRide,
   expireSession,
+  proposeTime,
+  setFinalTime,
+  acceptFinalTime,
+  rejectFinalTime,
 } = require("../controllers/rideSession.controller");
 
 router.post("/request",      protect, createRideRequest);
@@ -46,5 +50,9 @@ router.get("/session/:sessionId/messages", protect, getMessages);
 router.post("/session/:sessionId/message", protect, sendMessage);
 router.post("/session/:sessionId/confirm", protect, confirmRide);
 router.post("/session/:sessionId/expire",  protect, expireSession);
+router.post("/session/:sessionId/propose-time",   protect, proposeTime);
+router.post("/session/:sessionId/set-final-time", protect, setFinalTime);
+router.post("/session/:sessionId/accept-final-time", protect, acceptFinalTime);
+router.post("/session/:sessionId/reject-final-time", protect, rejectFinalTime);
 
 module.exports = router;

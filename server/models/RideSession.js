@@ -48,6 +48,12 @@ const rideSessionSchema = new mongoose.Schema(
       address: String,
     },
     departureTime: { type: Date, default: null },
+    // Time selection: both can propose; one sets "final" → other gets confirmation
+    proposedTime: { type: Date, default: null },
+    proposedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    finalTime: { type: Date, default: null },
+    finalTimeProposedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    finalTimeAccepted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

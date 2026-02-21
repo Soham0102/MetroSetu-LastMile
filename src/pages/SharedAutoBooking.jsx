@@ -135,9 +135,10 @@ export default function SharedRidePage({ navigate }) {
   const [searchState, setSearchState] = useState("idle");
   const [sessions, setSessions] = useState([]);
   const [chatSessionId, setChatSessionId] = useState(null);
-  const [chatSessionDetails, setChatSessionDetails] = useState(null); // { otherUser, commonSpot, departureTime } when opening from accept
+  const [chatSessionDetails, setChatSessionDetails] = useState(null);
   const [chatIncomingMessage, setChatIncomingMessage] = useState(null);
   const [chatExpiredSessionId, setChatExpiredSessionId] = useState(null);
+  const [chatSessionUpdate, setChatSessionUpdate] = useState(null); // time proposed / final time set (from socket)
   const [acceptingId, setAcceptingId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
 
@@ -270,15 +271,35 @@ export default function SharedRidePage({ navigate }) {
       setChatExpiredSessionId(data.sessionId || null);
     });
 
-    // Another user booked me → show invite
-    // Also: remove ALL riders who are now in a booked group from the list
+    socket.on("ride:time_proposed", (data) => {
+      setChatSessionUpdate({
+        sessionId: data.sessionId,
+        proposedTime: data.proposedTime,
+        proposedBy: data.proposedBy,
+      });
+    });
+    socket.on("ride:final_time_proposed", (data) => {
+      setChatSessionUpdate({
+        sessionId: data.sessionId,
+        finalTime: data.finalTime,
+        finalTimeProposedBy: data.proposedBy,
+        commonSpot: data.commonSpot,
+      });
+    });
+    socket.on("ride:final_time_rejected", (data) => {
+      setChatSessionUpdate({
+        sessionId: data.sessionId,
+        finalTime: null,
+        finalTimeProposedBy: null,
+      });
+    });
+
+    // Ride booked (both users get this when both confirm or when other accepts final time)
     socket.on("ride:booked", (data) => {
-      // Remove booked riders from the visible list (they're no longer "waiting")
       if (data.bookedRiderIds && data.bookedRiderIds.length > 0) {
         setAllRiders(prev => prev.filter(r => !data.bookedRiderIds.includes(r.userId)));
         setSelected(prev => {
           const s = new Set(prev);
-          // Also deselect any that got booked
           prev.forEach(id => {
             const rider = allRiders.find(r => r.id === id);
             if (rider && data.bookedRiderIds.includes(rider.userId)) s.delete(id);
@@ -286,9 +307,16 @@ export default function SharedRidePage({ navigate }) {
           return s;
         });
       }
-      if (data.bookedBy === myUserId) return;
       setInvite(data);
-      toast("🎉 Someone invited you to a shared ride!", "success");
+      if (data.bookedBy !== myUserId) {
+        toast("🎉 Someone invited you to a shared ride!", "success");
+      }
+      // Redirect both users to confirmation page when ride is confirmed
+      if (data.redirect) {
+        localStorage.setItem("inviteBooking", JSON.stringify(data));
+        if (navigate) navigate("/shared-ride/booking?mode=invited");
+        else window.location.href = "/shared-ride/booking?mode=invited";
+      }
     });
 
     return () => { socket.disconnect(); };
@@ -875,9 +903,16 @@ export default function SharedRidePage({ navigate }) {
                 setChatIncomingMessage(null);
                 setChatExpiredSessionId(null);
               }}
+              onNavigateToDetail={(sid) => {
+                setChatSessionId(null);
+                setChatSessionDetails(null);
+                if (navigate) navigate(`/shared-ride/session/${sid}`);
+                else window.location.href = `/shared-ride/session/${sid}`;
+              }}
               onRideBooked={(booking) => {
                 setInvite(booking);
                 setChatSessionId(null);
+                if (booking) localStorage.setItem("inviteBooking", JSON.stringify(booking));
                 toast("Ride confirmed! Check your invite.", "success");
                 if (navigate) navigate("/shared-ride/booking?mode=invited");
                 else window.location.href = "/shared-ride/booking?mode=invited";
@@ -885,6 +920,7 @@ export default function SharedRidePage({ navigate }) {
               token={token}
               incomingMessage={chatIncomingMessage}
               expiredSessionId={chatExpiredSessionId}
+              sessionUpdate={chatSessionUpdate}
             />
           );
         })()}

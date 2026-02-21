@@ -1,15 +1,48 @@
 // controllers/rideSession.controller.js
-// Accept/Reject flow, chat, dual confirmation, and 5-min idle expiry.
+// Accept/Reject flow, chat, time selection, dual confirmation, and 5-min idle expiry.
 
 const RideRequest = require("../models/RideRequest");
 const RideSession = require("../models/RideSession");
 const ChatMessage = require("../models/ChatMessage");
 const { v4: uuidv4 } = require("uuid");
+const axios = require("axios");
 
 const CHAT_IDLE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 function getIo(req) {
   return req.app.get("io");
+}
+
+// Geocode lat,lng to get a named common spot (for session common point)
+async function geocodeCommonSpot(lat, lng) {
+  if (!lat || !lng) return { lat: lat || 0, lng: lng || 0, name: "Meetup Point", address: "" };
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`;
+    const response = await axios.get(url);
+    const results = response.data.results;
+    if (!results || results.length === 0) {
+      return { lat, lng, name: "Meetup Point", address: `${lat.toFixed(5)}, ${lng.toFixed(5)}` };
+    }
+    const preferred =
+      results.find((r) => r.types.includes("route")) ||
+      results.find((r) => r.types.includes("point_of_interest")) ||
+      results.find((r) => r.types.includes("establishment")) ||
+      results[0];
+    const shortName =
+      preferred.address_components?.[0]?.long_name ||
+      preferred.address_components?.[1]?.long_name ||
+      "Meetup Point";
+    return {
+      lat: preferred.geometry.location.lat,
+      lng: preferred.geometry.location.lng,
+      name: shortName,
+      address: preferred.formatted_address || "",
+    };
+  } catch (err) {
+    console.error("geocodeCommonSpot:", err.message);
+    return { lat, lng, name: "Meetup Point", address: "" };
+  }
 }
 
 // ─── Accept request (User B accepts User A's request) ─────────────────────
@@ -53,12 +86,14 @@ exports.acceptRequest = async (req, res) => {
       status: "waiting",
     });
 
-    const commonSpot = requesterRequest.commonSpot || {
-      lat: requesterRequest.sourceLat,
-      lng: requesterRequest.sourceLng,
-      name: "Meetup Point",
-      address: "",
-    };
+    // Compute common point from centroid of both users' locations and geocode it
+    const reqLat = requesterRequest.sourceLat;
+    const reqLng = requesterRequest.sourceLng;
+    const accLat = accepterRequest?.sourceLat ?? reqLat;
+    const accLng = accepterRequest?.sourceLng ?? reqLng;
+    const centroidLat = (reqLat + accLat) / 2;
+    const centroidLng = (reqLng + accLng) / 2;
+    const commonSpot = await geocodeCommonSpot(centroidLat, centroidLng);
 
     const session = await RideSession.create({
       requesterRequestId: requestId,
@@ -148,6 +183,11 @@ exports.getMySessions = async (req, res) => {
         lastMessageAt: s.lastMessageAt,
         commonSpot: s.commonSpot,
         departureTime: s.departureTime,
+        proposedTime: s.proposedTime,
+        proposedBy: s.proposedBy,
+        finalTime: s.finalTime,
+        finalTimeProposedBy: s.finalTimeProposedBy,
+        finalTimeAccepted: s.finalTimeAccepted,
       };
     });
 
@@ -193,9 +233,232 @@ exports.getSession = async (req, res) => {
       commonSpot: session.commonSpot,
       departureTime: session.departureTime,
       lastMessageAt: session.lastMessageAt,
+      proposedTime: session.proposedTime,
+      proposedBy: session.proposedBy,
+      finalTime: session.finalTime,
+      finalTimeProposedBy: session.finalTimeProposedBy,
+      finalTimeAccepted: session.finalTimeAccepted,
     };
 
     res.json(payload);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ─── Propose time (either user can propose; visible to the other) ──────────
+exports.proposeTime = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { proposedTime: proposedTimeStr } = req.body;
+    const io = getIo(req);
+    const userId = req.user.id;
+
+    if (!proposedTimeStr) {
+      return res.status(400).json({ error: "proposedTime is required (ISO string)" });
+    }
+
+    const session = await RideSession.findById(sessionId);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const requesterId = session.requesterUserId.toString();
+    const accepterId = session.accepterUserId.toString();
+    if (userId !== requesterId && userId !== accepterId) {
+      return res.status(403).json({ error: "Not part of this session" });
+    }
+    if (session.status !== "accepted" && session.status !== "chatting") {
+      return res.status(400).json({ error: "Session is no longer active" });
+    }
+
+    const proposedTime = new Date(proposedTimeStr);
+    session.proposedTime = proposedTime;
+    session.proposedBy = userId;
+    await session.save();
+
+    const otherUserId = userId === requesterId ? accepterId : requesterId;
+    if (io) {
+      io.to(`user:${otherUserId}`).emit("ride:time_proposed", {
+        sessionId,
+        proposedTime: proposedTime.toISOString(),
+        proposedBy: userId,
+      });
+    }
+
+    res.json({
+      session: session.toObject(),
+      proposedTime: proposedTime.toISOString(),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ─── Set final time (proposer locks time; confirmation goes to the OTHER user only) ─
+exports.setFinalTime = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { finalTime: finalTimeStr } = req.body;
+    const io = getIo(req);
+    const userId = req.user.id;
+
+    if (!finalTimeStr) {
+      return res.status(400).json({ error: "finalTime is required (ISO string)" });
+    }
+
+    const session = await RideSession.findById(sessionId);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const requesterId = session.requesterUserId.toString();
+    const accepterId = session.accepterUserId.toString();
+    if (userId !== requesterId && userId !== accepterId) {
+      return res.status(403).json({ error: "Not part of this session" });
+    }
+    if (session.status !== "accepted" && session.status !== "chatting") {
+      return res.status(400).json({ error: "Session is no longer active" });
+    }
+
+    const finalTime = new Date(finalTimeStr);
+    session.finalTime = finalTime;
+    session.finalTimeProposedBy = userId;
+    session.finalTimeAccepted = false;
+    await session.save();
+
+    const otherUserId = userId === requesterId ? accepterId : requesterId;
+    if (io) {
+      io.to(`user:${otherUserId}`).emit("ride:final_time_proposed", {
+        sessionId,
+        finalTime: finalTime.toISOString(),
+        commonSpot: session.commonSpot,
+        proposedBy: userId,
+      });
+    }
+
+    res.json({
+      session: session.toObject(),
+      finalTime: finalTime.toISOString(),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ─── Accept final time (other user confirms → both confirmed, book ride, redirect both) ─
+exports.acceptFinalTime = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const io = getIo(req);
+    const userId = req.user.id;
+
+    const session = await RideSession.findById(sessionId)
+      .populate("requesterUserId", "name avatar");
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const requesterId = session.requesterUserId._id.toString();
+    const accepterId = session.accepterUserId.toString();
+    if (userId !== requesterId && userId !== accepterId) {
+      return res.status(403).json({ error: "Not part of this session" });
+    }
+    if (!session.finalTime || !session.finalTimeProposedBy) {
+      return res.status(400).json({ error: "No final time has been proposed" });
+    }
+    if (session.finalTimeProposedBy.toString() === userId) {
+      return res.status(400).json({ error: "You proposed the final time; the other user must accept" });
+    }
+    if (session.finalTimeAccepted) {
+      return res.status(400).json({ error: "Final time already accepted" });
+    }
+
+    session.finalTimeAccepted = true;
+    session.requesterConfirmed = true;
+    session.accepterConfirmed = true;
+    session.status = "both_confirmed";
+    const groupId = uuidv4();
+    session.groupId = groupId;
+    session.departureTime = session.finalTime;
+    await session.save();
+
+    const allUserIds = [requesterId, accepterId];
+    const allRequestIds = await RideRequest.find({
+      user: { $in: allUserIds },
+      status: "waiting",
+    }).select("_id user");
+
+    const commonSpot = session.commonSpot || {
+      lat: 0,
+      lng: 0,
+      name: "Meetup Point",
+      address: "",
+    };
+
+    await RideRequest.updateMany(
+      { _id: { $in: allRequestIds.map((r) => r._id) } },
+      {
+        $set: {
+          status: "matched",
+          departureTime: session.finalTime,
+          commonSpot,
+          matchedGroupId: groupId,
+          matchedWith: allUserIds,
+        },
+      }
+    );
+
+    const payload = {
+      groupId,
+      commonSpot,
+      departureTime: session.finalTime.toISOString(),
+      seats: 2,
+      bookedBy: requesterId,
+      bookedRiderIds: allUserIds,
+    };
+
+    if (io) {
+      allUserIds.forEach((uid) => {
+        io.to(`user:${uid}`).emit("ride:booked", { ...payload, redirect: true });
+      });
+      io.emit("ride:riders_booked", { bookedRiderIds: allUserIds });
+    }
+
+    res.json({
+      message: "Ride confirmed! Both parties agreed.",
+      session: session.toObject(),
+      booking: payload,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ─── Reject final time (other user declines; can propose again) ────────────
+exports.rejectFinalTime = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const io = getIo(req);
+    const userId = req.user.id;
+
+    const session = await RideSession.findById(sessionId);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const requesterId = session.requesterUserId.toString();
+    const accepterId = session.accepterUserId.toString();
+    if (userId !== requesterId && userId !== accepterId) {
+      return res.status(403).json({ error: "Not part of this session" });
+    }
+    if (session.finalTimeProposedBy?.toString() === userId) {
+      return res.status(400).json({ error: "You proposed the final time; you cannot reject it" });
+    }
+
+    session.finalTime = null;
+    session.finalTimeProposedBy = null;
+    session.finalTimeAccepted = false;
+    await session.save();
+
+    const otherUserId = userId === requesterId ? accepterId : requesterId;
+    if (io) {
+      io.to(`user:${otherUserId}`).emit("ride:final_time_rejected", { sessionId });
+    }
+
+    res.json({ message: "Final time rejected. You can propose a new time.", session: session.toObject() });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -360,6 +623,7 @@ exports.confirmRide = async (req, res) => {
         seats: 2,
         bookedBy: requesterId,
         bookedRiderIds: allUserIds,
+        redirect: true,
       };
 
       if (io) {

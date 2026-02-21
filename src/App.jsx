@@ -10,6 +10,7 @@ import SharedAutoBooking from "./pages/SharedAutoBooking";
 import SharedBikeBooking from "./pages/SharedBikeBooking";
 import WalkingDirections from "./pages/WalkingDirections";
 import RideBookingPage from "./pages/RideBookingPage";
+import RideSessionDetailPage from "./pages/RideSessionDetailPage";
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
         <Route path="/walking-directions" element={<WalkingDirections />} />
 
         <Route path="/shared-ride/booking" element={<RideBookingPage />} />
+        <Route path="/shared-ride/session/:sessionId" element={<RideSessionDetailPage />} />
 
       </Routes>
     </>
