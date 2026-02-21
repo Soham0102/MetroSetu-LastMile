@@ -2,14 +2,17 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 
-const Signup = () => {
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000/api";
+
+export default function Signup() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
     name: "",
     email: "",
     phone: "",
-    password: ""
+    password: "",
+    gender: "",
   });
 
   const [loading, setLoading] = useState(false);
@@ -19,16 +22,20 @@ const Signup = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setError("");
 
     if (!form.name || !form.email || !form.phone || !form.password) {
       return setError("All fields are required");
     }
+    if (!form.gender) {
+      return setError("Please select your gender");
+    }
 
     try {
       setLoading(true);
-      await axios.post("http://localhost:5000/api/auth/signup", form);
+      await axios.post(`${API_BASE}/auth/signup`, form);
       setLoading(false);
       navigate("/login");
     } catch (err) {
@@ -45,42 +52,65 @@ const Signup = () => {
 
         {error && <div style={styles.error}>{error}</div>}
 
-        <input
-          name="name"
-          placeholder="Full Name"
-          style={styles.input}
-          onChange={handleChange}
-        />
+        <form onSubmit={handleSubmit}>
+          <input
+            name="name"
+            placeholder="Full Name"
+            value={form.name}
+            style={styles.input}
+            onChange={handleChange}
+          />
 
-        <input
-          name="email"
-          type="email"
-          placeholder="Email Address"
-          style={styles.input}
-          onChange={handleChange}
-        />
+          <input
+            name="email"
+            type="email"
+            placeholder="Email Address"
+            value={form.email}
+            style={styles.input}
+            onChange={handleChange}
+          />
 
-        <input
-          name="phone"
-          placeholder="Phone Number"
-          style={styles.input}
-          onChange={handleChange}
-        />
+          <input
+            name="phone"
+            placeholder="Phone Number"
+            value={form.phone}
+            style={styles.input}
+            onChange={handleChange}
+          />
 
-        <input
-          name="password"
-          type="password"
-          placeholder="Password"
-          style={styles.input}
-          onChange={handleChange}
-        />
+          <input
+            name="password"
+            type="password"
+            placeholder="Password"
+            value={form.password}
+            style={styles.input}
+            onChange={handleChange}
+          />
+
+          <select
+            name="gender"
+            value={form.gender}
+            style={styles.select}
+            onChange={handleChange}
+            required
+          >
+            <option value="">Select Gender</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+
+          <button type="submit" style={styles.button} disabled={loading}>
+            {loading ? "Creating..." : "Sign Up"}
+          </button>
+        </form>
 
         <button
-          style={styles.button}
-          onClick={handleSubmit}
-          disabled={loading}
+          type="button"
+          style={styles.concessionButton}
+          onClick={() => navigate("/signup/concession")}
         >
-          {loading ? "Creating..." : "Sign Up"}
+          Apply for Concession
         </button>
 
         <p style={styles.linkText}>
@@ -89,7 +119,7 @@ const Signup = () => {
       </div>
     </div>
   );
-};
+}
 
 const styles = {
   container: {
@@ -97,24 +127,24 @@ const styles = {
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
-    background: "linear-gradient(135deg, #154272, #1e88e5)"
+    background: "linear-gradient(135deg, #154272, #1e88e5)",
   },
   card: {
     background: "white",
     padding: "40px",
     borderRadius: "12px",
     width: "350px",
-    boxShadow: "0 10px 25px rgba(0,0,0,0.2)"
+    boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
   },
   title: {
     textAlign: "center",
     marginBottom: "5px",
-    color: "#154272"
+    color: "#154272",
   },
   subtitle: {
     textAlign: "center",
     marginBottom: "25px",
-    color: "#666"
+    color: "#666",
   },
   input: {
     width: "100%",
@@ -122,7 +152,19 @@ const styles = {
     marginBottom: "15px",
     borderRadius: "6px",
     border: "1px solid #ccc",
-    fontSize: "14px"
+    fontSize: "14px",
+    boxSizing: "border-box",
+  },
+  select: {
+    width: "100%",
+    padding: "12px",
+    marginBottom: "15px",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+    fontSize: "14px",
+    boxSizing: "border-box",
+    background: "white",
+    cursor: "pointer",
   },
   button: {
     width: "100%",
@@ -134,7 +176,20 @@ const styles = {
     cursor: "pointer",
     fontSize: "15px",
     fontWeight: "600",
-    transition: "0.3s"
+    transition: "0.3s",
+  },
+  concessionButton: {
+    width: "100%",
+    padding: "12px",
+    marginTop: "12px",
+    background: "transparent",
+    color: "#154272",
+    border: "2px solid #154272",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: "600",
+    transition: "0.3s",
   },
   error: {
     background: "#ffe0e0",
@@ -142,13 +197,11 @@ const styles = {
     marginBottom: "15px",
     borderRadius: "6px",
     color: "red",
-    fontSize: "13px"
+    fontSize: "13px",
   },
   linkText: {
     textAlign: "center",
     marginTop: "15px",
-    fontSize: "14px"
-  }
+    fontSize: "14px",
+  },
 };
-
-export default Signup;

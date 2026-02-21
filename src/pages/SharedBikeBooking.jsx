@@ -163,8 +163,14 @@ const SharedBikeBooking = () => {
   const [vehicleType, setVehicleType] = useState("bike");
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [submitted, setSubmitted] = useState(false);
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const concessionApproved = !!user?.concessionApproved;
 
-  const vehicles = MOCK_VEHICLES[vehicleType];
+  const vehicles = MOCK_VEHICLES[vehicleType].map((v) => {
+    if (!concessionApproved) return v;
+    const discounted = v.pricePerKm * 0.75;
+    return { ...v, priceUnit: `₹${discounted}/km`, pricePerKm: discounted, originalPriceUnit: v.priceUnit };
+  });
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -190,7 +196,7 @@ const SharedBikeBooking = () => {
 
       <div className="gov-breadcrumb">
         <div className="gov-breadcrumb-inner">
-          <a onClick={() => navigate("/")}>HOME</a> &nbsp;›&nbsp;
+          <a onClick={() => navigate("/home")}>HOME</a> &nbsp;›&nbsp;
           <a onClick={() => navigate("/recommendation")}>RECOMMENDATION</a> &nbsp;›&nbsp;
           <span>SHARED BIKE / SCOOTY</span>
         </div>
@@ -275,7 +281,10 @@ const SharedBikeBooking = () => {
                     </span>
                     <span className="v-distance">📍 {v.distance}</span>
                   </div>
-                  <div className="v-price">{v.priceUnit} <span>rental</span></div>
+                  <div className="v-price">
+                    {v.priceUnit} <span>rental</span>
+                    {concessionApproved && <span style={{ display: "block", fontSize: "0.7rem", color: "#0d9488", fontWeight: "600" }}>25% Concession applied</span>}
+                  </div>
                   {v.available && (
                     <button
                       className="v-btn"

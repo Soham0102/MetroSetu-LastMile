@@ -45,7 +45,7 @@ const WomenSafety = () => {
 
       <button
         className="primary-btn"
-        onClick={() => navigate("/")}
+        onClick={() => navigate("/home")}
       >
         ⬅ Back to Home
       </button>

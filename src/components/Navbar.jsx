@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 const Navbar = () => {
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -10,16 +11,35 @@ const Navbar = () => {
     navigate("/login");
   };
 
+  const concessionApproved = user?.concessionApproved;
+
   return (
+    <div>
+      {concessionApproved && (
+        <div style={{
+          background: "linear-gradient(90deg, #0d9488, #0f766e)",
+          color: "white",
+          textAlign: "center",
+          padding: "8px 16px",
+          fontSize: "14px",
+          fontWeight: "600",
+        }}>
+          ✓ You are now a Concession User — 25% discount on all rides
+        </div>
+      )}
     <div style={styles.nav}>
       <div style={styles.logo}>🚇 MetroSetu</div>
 
       <div style={styles.links}>
-        <Link to="/">Home</Link>
+        <Link to="/home">Home</Link>
+
+        {token && <Link to="/donate">Donate</Link>}
 
         {token && <Link to="/recommendation">Recommendation</Link>}
 
         {token && <Link to="/virtualhub">Virtual Hub</Link>}
+
+        {token && user?.isAdmin && <Link to="/admin">Admin Dashboard</Link>}
 
         {!token && <Link to="/login">Login</Link>}
         {!token && <Link to="/signup">Signup</Link>}
@@ -30,6 +50,7 @@ const Navbar = () => {
           </button>
         )}
       </div>
+    </div>
     </div>
   );
 };

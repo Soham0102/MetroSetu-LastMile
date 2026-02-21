@@ -447,7 +447,7 @@ const WalkingDirections = () => {
       {/* ── Breadcrumb ── */}
       <div className="walk-breadcrumb">
         <div className="walk-breadcrumb-inner">
-          <a onClick={() => navigate("/")}>HOME</a> &nbsp;›&nbsp;
+          <a onClick={() => navigate("/home")}>HOME</a> &nbsp;›&nbsp;
           <a onClick={() => navigate("/recommendation")}>RECOMMENDATION</a> &nbsp;›&nbsp;
           <span>WALKING DIRECTIONS</span>
         </div>

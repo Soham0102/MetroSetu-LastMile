@@ -55,6 +55,7 @@ app.use("/api/routes", require("./routes/routes"));
 app.use("/api/routes", require("./routes/routesApi"));
 app.use("/api/shared-ride", require("./routes/sharedRide.routes"));
 app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/donations", require("./routes/donationRoutes"));
 
 app.get("/", (req, res) => {
   res.send("MetroSetu Backend Running 🚀");
@@ -80,6 +81,7 @@ io.use((socket, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     socket.userId = decoded.id;
+    socket.isAdmin = !!decoded.isAdmin;
     next();
   } catch (err) {
     next(new Error("Invalid token"));
@@ -90,9 +92,13 @@ io.use((socket, next) => {
 io.on("connection", (socket) => {
   console.log(`🔌 Socket connected: ${socket.id} | User: ${socket.userId}`);
 
-  // Join personal room
+  // Join personal room for user notifications (e.g. concession approved)
   if (socket.userId) {
     socket.join(`user:${socket.userId}`);
+  }
+  // Admin room for real-time donation/concession updates
+  if (socket.isAdmin) {
+    socket.join("admin");
   }
 
   // Join ride group room

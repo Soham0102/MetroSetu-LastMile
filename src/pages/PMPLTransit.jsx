@@ -242,7 +242,7 @@ const PMPLTransit = () => {
 
       <div className="gov-breadcrumb">
         <div className="gov-breadcrumb-inner">
-          <a onClick={() => navigate("/")}>HOME</a> &nbsp;›&nbsp;{" "}
+          <a onClick={() => navigate("/home")}>HOME</a> &nbsp;›&nbsp;{" "}
           <a onClick={() => navigate("/recommendation")}>RECOMMENDATION</a> &nbsp;›&nbsp;{" "}
           <span>PMPML TRANSIT MAP</span>
         </div>

@@ -97,7 +97,7 @@ const Dashboard = () => {
       <div style={{ marginTop: "40px" }}>
         <button
           className="primary-btn"
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/home")}
         >
           ⬅ Back to Home
         </button>
