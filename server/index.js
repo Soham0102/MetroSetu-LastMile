@@ -105,6 +105,16 @@ io.on("connection", (socket) => {
   });
 });
 
+// Expire chat sessions idle > 5 minutes (run every 60s)
+const { expireIdleSessions } = require("./controllers/rideSession.controller");
+setInterval(() => {
+  try {
+    expireIdleSessions(io);
+  } catch (e) {
+    console.warn("expireIdleSessions:", e.message);
+  }
+}, 60 * 1000);
+
 // ================= START SERVER =================
 const PORT = process.env.PORT || 5000;
 

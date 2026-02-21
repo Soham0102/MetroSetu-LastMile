@@ -19,6 +19,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow, Circle, Polyline } from "@react-google-maps/api";
 import { io } from "socket.io-client";
+import RideChatPopup from "../components/RideChatPopup";
 
 /* ─── CONFIG ─────────────────────────────────────────────────────────────── */
 const GMAPS_KEY  = import.meta.env.VITE_GOOGLE_MAPS_KEY  || "YOUR_GOOGLE_MAPS_KEY";
@@ -132,6 +133,13 @@ export default function SharedRidePage({ navigate }) {
   const [fetchDone,   setFetchDone]   = useState(false);
   // "idle" = before user starts search, "searching" = live, "cancelling" = cancel in-flight
   const [searchState, setSearchState] = useState("idle");
+  const [sessions, setSessions] = useState([]);
+  const [chatSessionId, setChatSessionId] = useState(null);
+  const [chatSessionDetails, setChatSessionDetails] = useState(null); // { otherUser, commonSpot, departureTime } when opening from accept
+  const [chatIncomingMessage, setChatIncomingMessage] = useState(null);
+  const [chatExpiredSessionId, setChatExpiredSessionId] = useState(null);
+  const [acceptingId, setAcceptingId] = useState(null);
+  const [rejectingId, setRejectingId] = useState(null);
 
   const socketRef   = useRef(null);
   const mapRef      = useRef(null);
@@ -155,6 +163,13 @@ export default function SharedRidePage({ navigate }) {
   }, [allRiders, myUserId, metroName, myLat, myLng, metroLat, metroLng]);
 
   const selectedRiders = useMemo(() => riders.filter(r => selected.has(r.id)), [riders, selected]);
+
+  // Session with a given rider (by otherUser id or requesterRequestId when I'm accepter)
+  const getSessionForRider = useCallback((rider) => {
+    return sessions.find(
+      (s) => String(s.otherUser?._id || s.otherUser) === String(rider.userId)
+    );
+  }, [sessions]);
 
   /* ── On mount: only cleanup stale request from previous session ─────────── */
   useEffect(() => {
@@ -232,6 +247,29 @@ export default function SharedRidePage({ navigate }) {
       });
     });
 
+    // Someone accepted my request → refresh sessions so Chat shows for that rider
+    socket.on("ride:request_accepted", ({ sessionId: sid }) => {
+      if (!sid) return;
+      fetch(`${API_BASE}/shared-ride/sessions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => r.json())
+        .then((d) => d.sessions && setSessions(d.sessions))
+        .catch(() => {});
+    });
+
+    socket.on("ride:request_rejected", () => {
+      // Optional: show "Your request was declined" for requester
+    });
+
+    socket.on("ride:chat_message", (data) => {
+      setChatIncomingMessage({ sessionId: data.sessionId, message: data.message });
+    });
+
+    socket.on("ride:session_expired", (data) => {
+      setChatExpiredSessionId(data.sessionId || null);
+    });
+
     // Another user booked me → show invite
     // Also: remove ALL riders who are now in a booked group from the list
     socket.on("ride:booked", (data) => {
@@ -297,7 +335,6 @@ export default function SharedRidePage({ navigate }) {
       const data = await res.json();
       if (res.ok) {
         const incoming = (data.requests || []).map(r => fmtRider(r, myLat, myLng));
-        // MERGE with existing state (don't overwrite — socket may have already added riders)
         setAllRiders(prev => {
           const existingIds = new Set(prev.map(r => r.id));
           const fresh = incoming.filter(r => !existingIds.has(r.id));
@@ -308,6 +345,63 @@ export default function SharedRidePage({ navigate }) {
       console.warn("[loadNearby] failed:", e);
     } finally {
       setFetchDone(true);
+    }
+  }
+
+  async function loadSessions() {
+    try {
+      const res = await fetch(`${API_BASE}/shared-ride/sessions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.sessions) setSessions(data.sessions);
+    } catch (e) {
+      console.warn("[loadSessions] failed:", e);
+    }
+  }
+
+  async function acceptRequest(riderRequestId) {
+    setAcceptingId(riderRequestId);
+    try {
+      const res = await fetch(`${API_BASE}/shared-ride/accept-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ requestId: riderRequestId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await loadSessions();
+        toast("Request accepted. Open Chat to discuss details.", "success");
+        const sid = data.session?._id || data.session?.id;
+        setChatSessionId(sid);
+        setChatSessionDetails({
+          otherUser: data.session?.otherUser,
+          commonSpot: data.session?.commonSpot,
+          departureTime: data.session?.departureTime,
+        });
+      } else {
+        toast(data.error || "Could not accept", "error");
+      }
+    } catch (e) {
+      toast("Connection error", "error");
+    } finally {
+      setAcceptingId(null);
+    }
+  }
+
+  async function rejectRequest(riderRequestId) {
+    setRejectingId(riderRequestId);
+    try {
+      await fetch(`${API_BASE}/shared-ride/reject-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ requestId: riderRequestId }),
+      });
+      toast("Request declined", "info");
+    } catch (e) {
+      toast("Connection error", "error");
+    } finally {
+      setRejectingId(null);
     }
   }
 
@@ -345,8 +439,10 @@ export default function SharedRidePage({ navigate }) {
     setAllRiders([]);
     setSelected(new Set());
     setFetchDone(false);
+    setSessions([]);
     await postMyRequest();
     await loadNearby();
+    await loadSessions();
   }
 
   /* ── Cancel Search — kills live request, clears list ────────────────────── */
@@ -672,19 +768,20 @@ export default function SharedRidePage({ navigate }) {
             </div>
           )}
 
-          {/* SEARCHING — riders found */}
+          {/* SEARCHING — riders found: Accept/Reject or Chat per rider */}
           {searchState === "searching" && riders.length > 0 && (
             <div className="sr-list">
               {riders.map((rider, idx) => {
-                const isSel = selected.has(rider.id);
+                const sessionWithRider = getSessionForRider(rider);
+                const isAccepting = acceptingId === rider.id;
+                const isRejecting = rejectingId === rider.id;
                 return (
                   <div
                     key={rider.id}
-                    className={`sr-card${isSel ? " sr-card--sel" : ""}`}
+                    className="sr-card sr-card--actions"
                     style={{ animationDelay: `${idx * 45}ms` }}
-                    onClick={() => toggleRider(rider.id)}
                   >
-                    <div className={`sr-avatar${isSel ? " sr-avatar--sel" : ""}`}>
+                    <div className="sr-avatar">
                       {rider.avatar
                         ? <img src={rider.avatar} alt={rider.name} />
                         : <span>{getInitials(rider.name)}</span>
@@ -698,8 +795,42 @@ export default function SharedRidePage({ navigate }) {
                         <span className="sr-card__metro">→ {rider.metroName}</span>
                       </div>
                     </div>
-                    <div className={`sr-tick${isSel ? " sr-tick--on" : ""}`}>
-                      {isSel ? "✓" : "+"}
+                    <div className="sr-card__actions">
+                      {sessionWithRider ? (
+                        <button
+                          type="button"
+                          className="sr-card__chat"
+                          onClick={() => {
+                            setChatSessionId(sessionWithRider._id);
+                            setChatSessionDetails({
+                              otherUser: sessionWithRider.otherUser,
+                              commonSpot: sessionWithRider.commonSpot,
+                              departureTime: sessionWithRider.departureTime,
+                            });
+                          }}
+                        >
+                          Chat
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="sr-card__reject"
+                            onClick={(e) => { e.stopPropagation(); rejectRequest(rider.id); }}
+                            disabled={isRejecting}
+                          >
+                            {isRejecting ? "…" : "Reject"}
+                          </button>
+                          <button
+                            type="button"
+                            className="sr-card__accept"
+                            onClick={(e) => { e.stopPropagation(); acceptRequest(rider.id); }}
+                            disabled={isAccepting}
+                          >
+                            {isAccepting ? "…" : "Accept"}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -707,11 +838,10 @@ export default function SharedRidePage({ navigate }) {
             </div>
           )}
 
-          {/* Footer — shown when riders are selected */}
+          {/* Legacy footer: only when at least one rider selected (optional multi-rider book flow) */}
           {selected.size > 0 && (
             <div className="sr-footer">
               <div className="sr-footer__group">
-                {/* Me avatar */}
                 <div className="sr-footer__av sr-footer__av--me">Me</div>
                 {selectedRiders.map(r => (
                   <div key={r.id} className="sr-footer__av">
@@ -728,6 +858,36 @@ export default function SharedRidePage({ navigate }) {
             </div>
           )}
         </div>
+
+        {/* Chat popup (when a session is open) */}
+        {chatSessionId && (() => {
+          const openSession = sessions.find((s) => String(s._id) === String(chatSessionId));
+          const details = chatSessionDetails || openSession;
+          return (
+            <RideChatPopup
+              sessionId={chatSessionId}
+              otherUser={details?.otherUser}
+              commonSpot={details?.commonSpot}
+              departureTime={details?.departureTime}
+              onClose={() => {
+                setChatSessionId(null);
+                setChatSessionDetails(null);
+                setChatIncomingMessage(null);
+                setChatExpiredSessionId(null);
+              }}
+              onRideBooked={(booking) => {
+                setInvite(booking);
+                setChatSessionId(null);
+                toast("Ride confirmed! Check your invite.", "success");
+                if (navigate) navigate("/shared-ride/booking?mode=invited");
+                else window.location.href = "/shared-ride/booking?mode=invited";
+              }}
+              token={token}
+              incomingMessage={chatIncomingMessage}
+              expiredSessionId={chatExpiredSessionId}
+            />
+          );
+        })()}
       </div>
     </>
   );
@@ -969,6 +1129,33 @@ const STYLES = `
   transition: all .18s;
 }
 .sr-tick--on { background:#00d084; border-color:#00d084; color:#fff; font-weight:700; }
+
+/* CARD ACTIONS (Accept/Reject or Chat) */
+.sr-card--actions { cursor: default; }
+.sr-card--actions .sr-card__info { flex: 1; min-width: 0; }
+.sr-card__actions {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.sr-card__accept {
+  background: #00d084; color: #071a0f; border: none;
+  border-radius: 10px; padding: 8px 14px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+}
+.sr-card__accept:disabled { opacity: .7; cursor: not-allowed; }
+.sr-card__reject {
+  background: rgba(248,81,73,.15); color: #f85149; border: 1px solid rgba(248,81,73,.35);
+  border-radius: 10px; padding: 8px 14px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+}
+.sr-card__reject:disabled { opacity: .7; cursor: not-allowed; }
+.sr-card__chat {
+  background: #3a7ae0; color: #fff; border: none;
+  border-radius: 10px; padding: 8px 16px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+}
 
 /* FOOTER */
 .sr-footer {

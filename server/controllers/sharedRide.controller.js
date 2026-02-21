@@ -145,7 +145,6 @@ exports.createRideRequest = async (req, res) => {
     const requestData = {
       sourceLat,
       sourceLng,
-      sourceLng,
       sourceAddress: sourceAddress || "",
       sourceLocation: {
         type: "Point",
