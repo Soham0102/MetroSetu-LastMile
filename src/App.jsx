@@ -14,6 +14,7 @@ import WalkingDirections from "./pages/WalkingDirections";
 import RideBookingPage from "./pages/RideBookingPage";
 import RideSessionDetailPage from "./pages/RideSessionDetailPage";
 import ConcessionSignup from "./pages/ConcessionSignup";
+import DriverSignup from "./pages/DriverSignup";
 import Donor from "./pages/Donor";
 import AdminDashboard from "./pages/AdminDashboard";
 
@@ -27,9 +28,15 @@ function App() {
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     if (!token || user?.isAdmin) return;
     const socket = io(SOCKET_URL, { auth: { token } });
-    socket.on("concession:approved", (data) => {
+    socket.on("concession:approved", () => {
       const u = JSON.parse(localStorage.getItem("user") || "{}");
       u.concessionApproved = true;
+      localStorage.setItem("user", JSON.stringify(u));
+      setRefresh((r) => r + 1);
+    });
+    socket.on("driver:approved", () => {
+      const u = JSON.parse(localStorage.getItem("user") || "{}");
+      u.driverApproved = true;
       localStorage.setItem("user", JSON.stringify(u));
       setRefresh((r) => r + 1);
     });
@@ -46,6 +53,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/signup/concession" element={<ConcessionSignup />} />
+        <Route path="/signup/driver" element={<DriverSignup />} />
         <Route path="/donate" element={<Donor />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/recommendation" element={<Recommendation />} />

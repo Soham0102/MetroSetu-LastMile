@@ -113,6 +113,14 @@ export default function Signup() {
           Apply for Concession
         </button>
 
+        <button
+          type="button"
+          style={styles.concessionButton}
+          onClick={() => navigate("/signup/driver")}
+        >
+          Register as a Driver
+        </button>
+
         <p style={styles.linkText}>
           Already have an account? <Link to="/login">Login</Link>
         </p>

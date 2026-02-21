@@ -12,6 +12,7 @@ const Navbar = () => {
   };
 
   const concessionApproved = user?.concessionApproved;
+  const driverApproved = user?.driverApproved;
 
   return (
     <div>
@@ -25,6 +26,18 @@ const Navbar = () => {
           fontWeight: "600",
         }}>
           ✓ You are now a Concession User — 25% discount on all rides
+        </div>
+      )}
+      {driverApproved && (
+        <div style={{
+          background: "linear-gradient(90deg, #154272, #1e88e5)",
+          color: "white",
+          textAlign: "center",
+          padding: "8px 16px",
+          fontSize: "14px",
+          fontWeight: "600",
+        }}>
+          ✓ You are an approved driver — You can accept rides
         </div>
       )}
     <div style={styles.nav}>

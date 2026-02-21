@@ -132,7 +132,9 @@ exports.login = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
-        concessionApproved: !!user.concessionApproved
+        concessionApproved: !!user.concessionApproved,
+        driverApproved: !!user.driverApproved,
+        isDriver: !!user.isDriver,
       }
     });
 
@@ -235,6 +237,156 @@ exports.serveConcessionDocument = async (req, res) => {
     const filePath = path.isAbsolute(stored) ? stored : path.join(__dirname, "..", stored);
     if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File not found" });
     res.sendFile(path.resolve(filePath));
+  } catch (error) {
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+// ================= DRIVER REGISTRATION =================
+exports.driverSignup = async (req, res) => {
+  try {
+    const { name, email, phone, password, gender, vehicleType, vehicleNumber, licenseNumber } = req.body;
+    const files = req.files || {};
+
+    if (!name || !email || !phone || !password || !gender || !vehicleType || !vehicleNumber || !licenseNumber) {
+      return res.status(400).json({ message: "All fields including vehicle and license are required" });
+    }
+
+    const validVehicleTypes = ["Auto", "Car", "Sedan", "Go Sedan"];
+    if (!validVehicleTypes.includes(vehicleType)) {
+      return res.status(400).json({ message: "Invalid vehicle type" });
+    }
+
+    if (!files.rc || !files.rc[0]) return res.status(400).json({ message: "RC document is required" });
+    if (!files.insurance || !files.insurance[0]) return res.status(400).json({ message: "Insurance document is required" });
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) return res.status(400).json({ message: "User already exists with this email" });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = await User.create({
+      name,
+      email,
+      phone,
+      password: hashedPassword,
+      gender,
+      isDriver: true,
+      driverApproved: false,
+      vehicleType,
+      vehicleNumber,
+      licenseNumber,
+      driverDocuments: {
+        rc: files.rc[0].path,
+        insurance: files.insurance[0].path,
+      },
+    });
+
+    const io = req.app.get("io");
+    if (io) io.to("admin").emit("driver:submitted", { userId: newUser._id });
+
+    res.status(201).json({
+      message: "Driver registration submitted. Admin approval required before you can accept rides.",
+      user: { id: newUser._id, name: newUser.name, email: newUser.email },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: error.message || "Server Error" });
+  }
+};
+
+// ================= DRIVER APPLICANTS (admin) =================
+exports.getDriverApplicants = async (req, res) => {
+  try {
+    const applicants = await User.find({
+      isDriver: true,
+      driverApproved: { $ne: true },
+      driverRejected: { $ne: true },
+    })
+      .select("name email phone gender vehicleType vehicleNumber licenseNumber driverDocuments createdAt")
+      .lean();
+    res.json(applicants);
+  } catch (error) {
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+exports.approveDriver = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { driverApproved: true, driverRejected: false },
+      { new: true }
+    );
+    if (!user) return res.status(404).json({ message: "User not found" });
+    const io = req.app.get("io");
+    if (io) io.to(`user:${user._id}`).emit("driver:approved", { message: "You are now an approved driver. You can accept rides." });
+    res.json({ message: "Driver approved", user });
+  } catch (error) {
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+exports.rejectDriver = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { driverRejected: true, driverApproved: false },
+      { new: true }
+    );
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ message: "Driver rejected", user });
+  } catch (error) {
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+exports.serveDriverDocument = async (req, res) => {
+  try {
+    const token = req.query.token || (req.headers.authorization && req.headers.authorization.split(" ")[1]);
+    if (!token) return res.status(401).json({ message: "Not authorized" });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded.isAdmin) return res.status(403).json({ message: "Admin required" });
+
+    const path = require("path");
+    const fs = require("fs");
+    const { userId, docType } = req.params;
+    if (!["rc", "insurance"].includes(docType)) return res.status(400).json({ message: "Invalid doc type" });
+    const user = await User.findById(userId).select("driverDocuments").lean();
+    if (!user || !user.driverDocuments || !user.driverDocuments[docType]) {
+      return res.status(404).json({ message: "Document not found" });
+    }
+    const stored = user.driverDocuments[docType];
+    const filePath = path.isAbsolute(stored) ? stored : path.join(__dirname, "..", stored);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ message: "File not found" });
+    res.sendFile(path.resolve(filePath));
+  } catch (error) {
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+// ================= ADMIN HISTORY =================
+exports.getAdminHistory = async (req, res) => {
+  try {
+    const Donation = require("../models/Donation");
+    const [donations, concessionHistory, driverHistory] = await Promise.all([
+      Donation.find().sort({ date: -1 }).lean(),
+      User.find({
+        concessionCategory: { $exists: true, $ne: null },
+        $or: [{ concessionApproved: true }, { concessionRejected: true }],
+      }).select("name email concessionCategory concessionApproved concessionRejected updatedAt").sort({ updatedAt: -1 }).lean(),
+      User.find({
+        isDriver: true,
+        $or: [{ driverApproved: true }, { driverRejected: true }],
+      }).select("name email vehicleType vehicleNumber licenseNumber driverApproved driverRejected updatedAt").sort({ updatedAt: -1 }).lean(),
+    ]);
+    const totalDonations = donations.reduce((sum, d) => sum + d.amount, 0);
+    res.json({
+      donations: { list: donations, total: totalDonations },
+      concessionHistory,
+      driverHistory,
+    });
   } catch (error) {
     res.status(500).json({ message: "Server Error" });
   }

@@ -37,7 +37,18 @@ const userSchema = new mongoose.Schema(
       rationCard: { type: String, default: null }
     },
     concessionApproved: { type: Boolean, default: false },
-    concessionRejected: { type: Boolean, default: false }
+    concessionRejected: { type: Boolean, default: false },
+    // Driver registration
+    isDriver: { type: Boolean, default: false },
+    driverApproved: { type: Boolean, default: false },
+    driverRejected: { type: Boolean, default: false },
+    vehicleType: { type: String, enum: ["Auto", "Car", "Sedan", "Go Sedan"], default: null },
+    vehicleNumber: { type: String, default: null },
+    licenseNumber: { type: String, default: null },
+    driverDocuments: {
+      rc: { type: String, default: null },
+      insurance: { type: String, default: null },
+    },
   },
   { timestamps: true }
 );
