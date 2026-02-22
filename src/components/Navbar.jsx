@@ -53,6 +53,7 @@ const Navbar = () => {
         {token && <Link to="/virtualhub">Virtual Hub</Link>}
 
         {token && user?.isAdmin && <Link to="/admin">Admin Dashboard</Link>}
+        {token && user?.driverApproved && <Link to="/driver-dashboard">Driver Dashboard</Link>}
 
         {!token && <Link to="/login">Login</Link>}
         {!token && <Link to="/signup">Signup</Link>}

@@ -1314,16 +1314,16 @@ const getModeOptions = (result, modes, navigate) => [
   },
   {
     id: "auto",
-    label: "Auto Rickshaw (Personal)",
+    label: "(Personal)",
     icon: "🛺",
     desc: "Book a personal auto via Rapido. Fast & door-to-door.",
     meta: modes.find(m => m.mode === "Auto"),
     recommended: result.mode === "Auto",
     buttons: [
       {
-        label: "Book on Rapido ↗",
+        label: "Book a Personal Ride",
         style: "gold",
-        action: () => window.open("https://rapido.bike", "_blank"),
+        action: () => navigate("/personal-ride-booking"),
       },
     ],
   },

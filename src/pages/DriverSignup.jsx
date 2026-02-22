@@ -8,6 +8,7 @@ const VEHICLE_TYPES = [
   { value: "", label: "Select vehicle type" },
   { value: "Auto", label: "Auto" },
   { value: "Car", label: "Car" },
+  { value: "Cab", label: "Cab" },
   { value: "Sedan", label: "Sedan" },
   { value: "Go Sedan", label: "Go Sedan" },
 ];

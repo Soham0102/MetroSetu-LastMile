@@ -42,7 +42,7 @@ const userSchema = new mongoose.Schema(
     isDriver: { type: Boolean, default: false },
     driverApproved: { type: Boolean, default: false },
     driverRejected: { type: Boolean, default: false },
-    vehicleType: { type: String, enum: ["Auto", "Car", "Sedan", "Go Sedan"], default: null },
+    vehicleType: { type: String, enum: ["Auto", "Car", "Cab", "Sedan", "Go Sedan"], default: null },
     vehicleNumber: { type: String, default: null },
     licenseNumber: { type: String, default: null },
     driverDocuments: {

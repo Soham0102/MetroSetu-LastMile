@@ -57,7 +57,11 @@ export default function Login() {
       localStorage.setItem("token", res.data.token);
       localStorage.setItem("user", JSON.stringify(res.data.user));
       setLoading(false);
-      navigate("/home");
+      if (res.data.user?.isDriver && res.data.user?.driverApproved) {
+        navigate("/driver-dashboard");
+      } else {
+        navigate("/home");
+      }
     } catch (err) {
       setLoading(false);
       setError(err.response?.data?.message || "Invalid credentials");

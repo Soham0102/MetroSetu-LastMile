@@ -81,7 +81,8 @@ export default function Donor() {
     try {
       setLoading(true);
       const res = await axios.post(`${API_BASE}/donations`, { donorName: donorName.trim(), amount: amt });
-      setReceipt(res.data.receipt);
+      const data = res?.data;
+      setReceipt(data?.receipt ?? null);
       setLoading(false);
     } catch (err) {
       setLoading(false);

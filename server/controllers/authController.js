@@ -252,7 +252,7 @@ exports.driverSignup = async (req, res) => {
       return res.status(400).json({ message: "All fields including vehicle and license are required" });
     }
 
-    const validVehicleTypes = ["Auto", "Car", "Sedan", "Go Sedan"];
+    const validVehicleTypes = ["Auto", "Car", "Cab", "Sedan", "Go Sedan"];
     if (!validVehicleTypes.includes(vehicleType)) {
       return res.status(400).json({ message: "Invalid vehicle type" });
     }

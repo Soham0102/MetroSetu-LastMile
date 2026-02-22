@@ -46,7 +46,20 @@ const app = express();
 const server = http.createServer(app);
 
 // ================= MIDDLEWARE =================
-app.use(cors());
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  process.env.CLIENT_URL,
+].filter(Boolean);
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // ================= ROUTES =================
@@ -56,6 +69,8 @@ app.use("/api/routes", require("./routes/routesApi"));
 app.use("/api/shared-ride", require("./routes/sharedRide.routes"));
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/donations", require("./routes/donationRoutes"));
+app.use("/api/personal-ride", require("./routes/personalRide.routes"));
+app.use("/api/maps", require("./routes/maps.routes"));
 
 app.get("/", (req, res) => {
   res.send("MetroSetu Backend Running 🚀");
@@ -64,7 +79,7 @@ app.get("/", (req, res) => {
 // ================= SOCKET.IO =================
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: allowedOrigins.length ? allowedOrigins : ["http://localhost:3000", "http://localhost:5173"],
     methods: ["GET", "POST"],
     credentials: true,
   },

@@ -17,6 +17,9 @@ import ConcessionSignup from "./pages/ConcessionSignup";
 import DriverSignup from "./pages/DriverSignup";
 import Donor from "./pages/Donor";
 import AdminDashboard from "./pages/AdminDashboard";
+import PersonalRideBooking from "./pages/PersonalRideBooking";
+import DriverDashboard from "./pages/DriverDashboard";
+import DriverRideDetails from "./pages/DriverRideDetails";
 
 const SOCKET_URL = import.meta.env.VITE_API_BASE?.replace("/api", "") || "http://localhost:5000";
 
@@ -56,9 +59,12 @@ function App() {
         <Route path="/signup/driver" element={<DriverSignup />} />
         <Route path="/donate" element={<Donor />} />
         <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/driver-dashboard" element={<DriverDashboard />} />
+        <Route path="/driver/ride/:rideId" element={<DriverRideDetails />} />
         <Route path="/recommendation" element={<Recommendation />} />
         <Route path="/virtualhub" element={<VirtualHub />} />
         <Route path="/pmpml-transit" element={<PMPLTransit />} />
+        <Route path="/personal-ride-booking" element={<PersonalRideBooking />} />
         <Route path="/shared-auto-booking" element={<SharedAutoBooking />} />
         <Route path="/shared-bike-booking" element={<SharedBikeBooking />} />
         <Route path="/walking-directions" element={<WalkingDirections />} />
