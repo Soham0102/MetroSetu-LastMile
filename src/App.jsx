@@ -18,6 +18,7 @@ import DriverSignup from "./pages/DriverSignup";
 import Donor from "./pages/Donor";
 import AdminDashboard from "./pages/AdminDashboard";
 import PersonalRideBooking from "./pages/PersonalRideBooking";
+import RideInProgress from "./pages/RideInProgress";
 import DriverDashboard from "./pages/DriverDashboard";
 import DriverRideDetails from "./pages/DriverRideDetails";
 
@@ -65,6 +66,7 @@ function App() {
         <Route path="/virtualhub" element={<VirtualHub />} />
         <Route path="/pmpml-transit" element={<PMPLTransit />} />
         <Route path="/personal-ride-booking" element={<PersonalRideBooking />} />
+        <Route path="/ride-in-progress/:rideId" element={<RideInProgress />} />
         <Route path="/shared-auto-booking" element={<SharedAutoBooking />} />
         <Route path="/shared-bike-booking" element={<SharedBikeBooking />} />
         <Route path="/walking-directions" element={<WalkingDirections />} />

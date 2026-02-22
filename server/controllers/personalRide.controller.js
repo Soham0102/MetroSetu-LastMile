@@ -1,6 +1,10 @@
 const mongoose = require("mongoose");
 const PersonalRide = require("../models/PersonalRide");
 const User = require("../models/User");
+const AdminWallet = require("../models/AdminWallet");
+const SOSAlert = require("../models/SOSAlert");
+
+const COMMISSION_RATE = 0.04; // 4%
 
 const RADIUS_METERS = 3 * 1000;
 
@@ -10,7 +14,7 @@ function generateOTP() {
 
 exports.create = async (req, res) => {
   try {
-    const { pickupLat, pickupLng, pickupAddress, dropLat, dropLng, dropAddress, offeredPrice, vehicleType } = req.body;
+    const { pickupLat, pickupLng, pickupAddress, dropLat, dropLng, dropAddress, fullPrice: fullPriceBody, offeredPrice, vehicleType } = req.body;
     if (pickupLat == null || pickupLng == null || dropLat == null || dropLng == null || offeredPrice == null) {
       return res.status(400).json({ message: "Pickup, drop coordinates and offeredPrice are required" });
     }
@@ -31,6 +35,8 @@ exports.create = async (req, res) => {
         code: "INVALID_SESSION",
       });
     }
+    const offered = Number(offeredPrice);
+    const fullPrice = fullPriceBody != null ? Number(fullPriceBody) : offered;
     const ride = await PersonalRide.create({
       user: userId,
       pickupLat: Number(pickupLat),
@@ -39,7 +45,8 @@ exports.create = async (req, res) => {
       dropLat: Number(dropLat),
       dropLng: Number(dropLng),
       dropAddress: dropAddress || "",
-      offeredPrice: Number(offeredPrice),
+      fullPrice,
+      offeredPrice: offered,
       vehicleType: vehicleType || "Auto",
       pickupLocation: {
         type: "Point",
@@ -92,7 +99,11 @@ exports.nearby = async (req, res) => {
     })
       .populate("user", "name email phone")
       .lean();
-    res.json(rides);
+    const withDriverPrice = rides.map((r) => {
+      const full = r.fullPrice != null ? r.fullPrice : r.offeredPrice;
+      return { ...r, driverPrice: Math.round(full * (1 - COMMISSION_RATE)) };
+    });
+    res.json(withDriverPrice);
   } catch (error) {
     res.status(500).json({ message: "Server Error" });
   }
@@ -101,11 +112,18 @@ exports.nearby = async (req, res) => {
 exports.getOne = async (req, res) => {
   try {
     const ride = await PersonalRide.findById(req.params.rideId)
-      .populate("user", "name email phone")
+      .populate("user", "name email phone gender")
       .populate("driver", "name phone")
       .lean();
     if (!ride) return res.status(404).json({ message: "Ride not found" });
-    res.json(ride);
+    const isDriver = ride.driver && String(ride.driver._id) === String(req.user.id);
+    const fullPrice = ride.fullPrice != null ? ride.fullPrice : ride.offeredPrice;
+    if (isDriver) {
+      const driverPrice = Math.round(fullPrice * (1 - COMMISSION_RATE));
+      res.json({ ...ride, driverPrice, fullPriceForDriver: fullPrice });
+    } else {
+      res.json(ride);
+    }
   } catch (error) {
     res.status(500).json({ message: "Server Error" });
   }
@@ -152,9 +170,11 @@ exports.accept = async (req, res) => {
 exports.startRide = async (req, res) => {
   try {
     const { otp } = req.body;
-    const ride = await PersonalRide.findById(req.params.rideId);
+    const ride = await PersonalRide.findById(req.params.rideId)
+      .populate("user", "name email phone gender")
+      .populate("driver", "name phone");
     if (!ride) return res.status(404).json({ message: "Ride not found" });
-    if (ride.driver?.toString() !== req.user.id) {
+    if (ride.driver?._id?.toString() !== req.user.id && ride.driver?.toString() !== req.user.id) {
       return res.status(403).json({ message: "Not your ride" });
     }
     if (ride.status !== "accepted") {
@@ -166,16 +186,33 @@ exports.startRide = async (req, res) => {
     ride.status = "ride_started";
     await ride.save();
 
+    const fullPrice = ride.fullPrice != null ? ride.fullPrice : ride.offeredPrice;
+    const commission = Math.round(fullPrice * COMMISSION_RATE);
+    const concessionDeduction = fullPrice > ride.offeredPrice ? fullPrice - ride.offeredPrice : 0;
+    const wallet = await AdminWallet.getOrCreate();
+    wallet.totalCommission = (wallet.totalCommission || 0) + commission;
+    wallet.totalConcessionDeduction = (wallet.totalConcessionDeduction || 0) + concessionDeduction;
+    await wallet.save();
+
+    const ridePayload = await PersonalRide.findById(ride._id)
+      .populate("user", "name email phone gender")
+      .populate("driver", "name phone")
+      .lean();
     const io = req.app.get("io");
     if (io) {
-      io.to(`user:${ride.user}`).emit("ride:started", { rideId: ride._id, message: "Your ride has started." });
+      io.to(`user:${ride.user._id || ride.user}`).emit("ride:started", {
+        rideId: ride._id,
+        message: "Your ride has started.",
+        ride: ridePayload,
+      });
     }
 
     const updated = await PersonalRide.findById(ride._id)
       .populate("user", "name email phone")
       .populate("driver", "name phone")
       .lean();
-    res.json(updated);
+    const driverPrice = Math.round(fullPrice * (1 - COMMISSION_RATE));
+    res.json({ ...updated, driverPrice, fullPriceForDriver: fullPrice });
   } catch (error) {
     res.status(500).json({ message: "Server Error" });
   }
@@ -189,6 +226,60 @@ exports.myRides = async (req, res) => {
       .lean();
     res.json(rides);
   } catch (error) {
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+exports.reportSOS = async (req, res) => {
+  try {
+    const ride = await PersonalRide.findById(req.params.rideId)
+      .populate("user", "name email phone gender")
+      .populate("driver", "name phone");
+    if (!ride) return res.status(404).json({ message: "Ride not found" });
+    const userId = ride.user?._id?.toString() || ride.user?.toString();
+    if (userId !== req.user.id) return res.status(403).json({ message: "Only the rider can report SOS" });
+    if (ride.status !== "ride_started" && ride.status !== "accepted") {
+      return res.status(400).json({ message: "SOS can only be reported for an active ride" });
+    }
+    const alert = await SOSAlert.create({
+      ride: ride._id,
+      user: ride.user._id || ride.user,
+      driver: ride.driver._id || ride.driver,
+      userSnapshot: {
+        name: ride.user?.name,
+        email: ride.user?.email,
+        phone: ride.user?.phone,
+        gender: ride.user?.gender,
+      },
+      driverSnapshot: {
+        name: ride.driver?.name,
+        phone: ride.driver?.phone,
+      },
+      rideSnapshot: {
+        pickupAddress: ride.pickupAddress,
+        dropAddress: ride.dropAddress,
+        pickupLat: ride.pickupLat,
+        pickupLng: ride.pickupLng,
+        dropLat: ride.dropLat,
+        dropLng: ride.dropLng,
+        offeredPrice: ride.offeredPrice,
+        vehicleType: ride.vehicleType,
+      },
+    });
+    const io = req.app.get("io");
+    if (io) {
+      io.to("admin").emit("sos:alert", {
+        alertId: alert._id,
+        rideId: ride._id,
+        user: alert.userSnapshot,
+        driver: alert.driverSnapshot,
+        ride: alert.rideSnapshot,
+        createdAt: alert.createdAt,
+      });
+    }
+    res.status(201).json({ message: "SOS sent to admin. Help is on the way.", alertId: alert._id });
+  } catch (error) {
+    console.error("SOS report error:", error);
     res.status(500).json({ message: "Server Error" });
   }
 };

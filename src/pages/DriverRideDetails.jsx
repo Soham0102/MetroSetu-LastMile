@@ -125,7 +125,9 @@ export default function DriverRideDetails() {
         <h2 style={{ marginBottom: "12px", color: "#154272" }}>Ride details</h2>
         <p><strong>Pickup:</strong> {ride.pickupAddress || `${ride.pickupLat?.toFixed(4)}, ${ride.pickupLng?.toFixed(4)}`}</p>
         <p><strong>Drop:</strong> {ride.dropAddress || `${ride.dropLat?.toFixed(4)}, ${ride.dropLng?.toFixed(4)}`}</p>
-        <div style={styles.price}>Offered price: ₹{ride.offeredPrice}</div>
+        <div style={styles.price}>
+          {ride.driverPrice != null ? `Your payout (after 4% commission): ₹${ride.driverPrice}` : `Offered price: ₹${ride.offeredPrice}`}
+        </div>
       </div>
 
       <div style={styles.card}>

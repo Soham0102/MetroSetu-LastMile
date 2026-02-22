@@ -9,7 +9,8 @@ const personalRideSchema = new mongoose.Schema(
     dropLat: { type: Number, required: true },
     dropLng: { type: Number, required: true },
     dropAddress: { type: String, default: "" },
-    offeredPrice: { type: Number, required: true },
+    fullPrice: { type: Number, default: null }, // Actual ride price before concession; driver sees fullPrice * 0.96
+    offeredPrice: { type: Number, required: true }, // What user pays (after concession if any)
     vehicleType: { type: String, default: "Auto" },
     status: {
       type: String,

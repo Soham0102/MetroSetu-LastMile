@@ -4,7 +4,7 @@ const {
   signup, login, concessionSignup, adminLogin,
   getConcessionApplicants, approveConcession, rejectConcession, serveConcessionDocument,
   driverSignup, getDriverApplicants, approveDriver, rejectDriver, serveDriverDocument,
-  getAdminHistory,
+  getAdminHistory, getSOSAlerts,
 } = require("../controllers/authController");
 const { concessionUpload, driverUpload } = require("../middleware/uploadMiddleware");
 const { protect, adminOnly } = require("../middleware/authMiddleware");
@@ -23,5 +23,6 @@ router.patch("/driver/:userId/approve", protect, adminOnly, approveDriver);
 router.patch("/driver/:userId/reject", protect, adminOnly, rejectDriver);
 router.get("/driver/document/:userId/:docType", serveDriverDocument);
 router.get("/admin/history", protect, adminOnly, getAdminHistory);
+router.get("/admin/sos-alerts", protect, adminOnly, getSOSAlerts);
 
 module.exports = router;

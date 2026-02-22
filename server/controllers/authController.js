@@ -132,6 +132,7 @@ exports.login = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
+        gender: user.gender || null,
         concessionApproved: !!user.concessionApproved,
         driverApproved: !!user.driverApproved,
         isDriver: !!user.isDriver,
@@ -370,7 +371,8 @@ exports.serveDriverDocument = async (req, res) => {
 exports.getAdminHistory = async (req, res) => {
   try {
     const Donation = require("../models/Donation");
-    const [donations, concessionHistory, driverHistory] = await Promise.all([
+    const AdminWallet = require("../models/AdminWallet");
+    const [donations, concessionHistory, driverHistory, wallet] = await Promise.all([
       Donation.find().sort({ date: -1 }).lean(),
       User.find({
         concessionCategory: { $exists: true, $ne: null },
@@ -380,13 +382,31 @@ exports.getAdminHistory = async (req, res) => {
         isDriver: true,
         $or: [{ driverApproved: true }, { driverRejected: true }],
       }).select("name email vehicleType vehicleNumber licenseNumber driverApproved driverRejected updatedAt").sort({ updatedAt: -1 }).lean(),
+      AdminWallet.getOrCreate().then((w) => w.toObject?.() || w),
     ]);
     const totalDonations = donations.reduce((sum, d) => sum + d.amount, 0);
     res.json({
       donations: { list: donations, total: totalDonations },
       concessionHistory,
       driverHistory,
+      wallet: {
+        totalCommission: wallet?.totalCommission ?? 0,
+        totalConcessionDeduction: wallet?.totalConcessionDeduction ?? 0,
+        totalDonations,
+        adminWalletBalance: totalDonations - (wallet?.totalConcessionDeduction ?? 0),
+      },
     });
+  } catch (error) {
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+// ================= ADMIN SOS ALERTS =================
+exports.getSOSAlerts = async (req, res) => {
+  try {
+    const SOSAlert = require("../models/SOSAlert");
+    const alerts = await SOSAlert.find().sort({ createdAt: -1 }).limit(50).lean();
+    res.json(alerts);
   } catch (error) {
     res.status(500).json({ message: "Server Error" });
   }

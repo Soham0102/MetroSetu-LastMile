@@ -16,7 +16,8 @@ export default function AdminDashboard() {
   const [donations, setDonations] = useState({ donations: [], total: 0 });
   const [applicants, setApplicants] = useState([]);
   const [driverApplicants, setDriverApplicants] = useState([]);
-  const [history, setHistory] = useState({ donations: { list: [], total: 0 }, concessionHistory: [], driverHistory: [] });
+  const [history, setHistory] = useState({ donations: { list: [], total: 0 }, concessionHistory: [], driverHistory: [], wallet: null });
+  const [sosAlerts, setSosAlerts] = useState([]);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
@@ -70,7 +71,21 @@ export default function AdminDashboard() {
     if (!token) return;
     try {
       const res = await axios.get(`${API_BASE}/auth/admin/history`, { headers: { Authorization: `Bearer ${token}` } });
-      setHistory(res.data || { donations: { list: [], total: 0 }, concessionHistory: [], driverHistory: [] });
+      setHistory(res.data || { donations: { list: [], total: 0 }, concessionHistory: [], driverHistory: [], wallet: null });
+    } catch (e) {
+      if (e.response?.status === 401 || e.response?.status === 403) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        navigate("/login");
+      }
+    }
+  }, [token, navigate]);
+
+  const fetchSOSAlerts = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await axios.get(`${API_BASE}/auth/admin/sos-alerts`, { headers: { Authorization: `Bearer ${token}` } });
+      setSosAlerts(res.data || []);
     } catch (e) {
       if (e.response?.status === 401 || e.response?.status === 403) {
         localStorage.removeItem("token");
@@ -84,8 +99,9 @@ export default function AdminDashboard() {
     fetchDonations();
     fetchApplicants();
     fetchDriverApplicants();
-    if (activeTab === "history") fetchHistory();
-  }, [fetchDonations, fetchApplicants, fetchDriverApplicants, activeTab, fetchHistory]);
+    fetchHistory();
+    fetchSOSAlerts();
+  }, [fetchDonations, fetchApplicants, fetchDriverApplicants, fetchHistory, fetchSOSAlerts]);
 
   useEffect(() => {
     if (!user?.isAdmin) {
@@ -100,9 +116,10 @@ export default function AdminDashboard() {
     const socket = io(SOCKET_URL, { auth: { token } });
     socket.on("donation:created", () => fetchDonations());
     socket.on("driver:submitted", () => fetchDriverApplicants());
+    socket.on("sos:alert", () => fetchSOSAlerts());
     socket.on("connect_error", () => {});
     return () => socket.disconnect();
-  }, [token, user?.isAdmin, fetchDonations, fetchDriverApplicants]);
+  }, [token, user?.isAdmin, fetchDonations, fetchDriverApplicants, fetchSOSAlerts]);
 
   useEffect(() => {
     const interval = setInterval(refresh, 5000);
@@ -207,6 +224,32 @@ export default function AdminDashboard() {
 
       {activeTab === "dashboard" && (
         <>
+          <div style={styles.section}>
+            <h2 style={styles.sectionTitle}>Revenue & Admin Wallet</h2>
+            {history.wallet && (
+              <div style={{ display: "flex", gap: "24px", flexWrap: "wrap", marginBottom: "16px" }}>
+                <div><span style={{ color: "#64748b", fontSize: "14px" }}>Commission (4% of rides)</span><p style={styles.total}>₹{history.wallet.totalCommission ?? 0}</p></div>
+                <div><span style={{ color: "#64748b", fontSize: "14px" }}>Concession deduction</span><p style={{ fontSize: "28px", fontWeight: "700", color: "#dc2626" }}>−₹{history.wallet.totalConcessionDeduction ?? 0}</p></div>
+                <div><span style={{ color: "#64748b", fontSize: "14px" }}>Admin Wallet (Donations − Concession)</span><p style={{ fontSize: "28px", fontWeight: "700", color: "#154272" }}>₹{history.wallet.adminWalletBalance ?? 0}</p></div>
+              </div>
+            )}
+          </div>
+          <div style={styles.section}>
+            <h2 style={styles.sectionTitle}>🆘 SOS Alerts (Emergency)</h2>
+            {(sosAlerts.length === 0) ? (
+              <p style={{ color: "#64748b" }}>No SOS alerts.</p>
+            ) : (
+              sosAlerts.map((a) => (
+                <div key={a._id} style={{ border: "2px solid #dc2626", borderRadius: "8px", padding: "16px", marginBottom: "12px", background: "#fef2f2" }}>
+                  <p style={{ fontWeight: "700", color: "#b91c1c", marginBottom: "8px" }}>SOS — {new Date(a.createdAt).toLocaleString()}</p>
+                  <p><strong>Rider:</strong> {a.userSnapshot?.name} · {a.userSnapshot?.phone} · {a.userSnapshot?.email} {a.userSnapshot?.gender && ` · ${a.userSnapshot.gender}`}</p>
+                  <p><strong>Driver:</strong> {a.driverSnapshot?.name} · {a.driverSnapshot?.phone}</p>
+                  <p><strong>Pickup:</strong> {a.rideSnapshot?.pickupAddress || `${a.rideSnapshot?.pickupLat}, ${a.rideSnapshot?.pickupLng}`}</p>
+                  <p><strong>Drop:</strong> {a.rideSnapshot?.dropAddress || `${a.rideSnapshot?.dropLat}, ${a.rideSnapshot?.dropLng}`}</p>
+                </div>
+              ))
+            )}
+          </div>
           <div style={styles.section}>
             <h2 style={styles.sectionTitle}>Donations</h2>
             {loading ? <p>Loading...</p> : (

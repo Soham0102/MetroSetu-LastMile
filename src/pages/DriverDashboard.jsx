@@ -118,7 +118,7 @@ export default function DriverDashboard() {
           >
             <div style={styles.ridePickup}>Pickup: {ride.pickupAddress || `${ride.pickupLat?.toFixed(4)}, ${ride.pickupLng?.toFixed(4)}`}</div>
             <div style={styles.rideDrop}>Drop: {ride.dropAddress || `${ride.dropLat?.toFixed(4)}, ${ride.dropLng?.toFixed(4)}`}</div>
-            <div style={styles.ridePrice}>₹{ride.offeredPrice}</div>
+            <div style={styles.ridePrice}>{ride.driverPrice != null ? `Your payout: ₹${ride.driverPrice}` : `₹${ride.offeredPrice}`}</div>
           </div>
         ))
       )}

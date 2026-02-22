@@ -107,16 +107,19 @@ export default function PersonalRideBooking() {
 
   const token = localStorage.getItem("token");
 
-  // Real-time: listen for driver acceptance on this same page (no redirect). OTP shown here when received.
+  // Real-time: listen for driver acceptance and ride started (redirect to Ride In Progress).
   useEffect(() => {
     if (!token) return;
     const socket = io(SOCKET_URL, { auth: { token } });
     socket.on("ride:accepted", (data) => setAcceptedInfo(data));
+    socket.on("ride:started", (data) => {
+      if (data?.rideId) navigate(`/ride-in-progress/${data.rideId}`);
+    });
     socket.on("connect_error", () => {
       // Backend may be stopped; avoid spamming console. Page still works for booking.
     });
     return () => socket.disconnect();
-  }, [token]);
+  }, [token, navigate]);
 
   const handleSearchDriver = async () => {
     if (finalPrice == null || originLat == null || originLng == null || destLat == null || destLng == null) return;
@@ -136,6 +139,7 @@ export default function PersonalRideBooking() {
           dropLat: destLat,
           dropLng: destLng,
           dropAddress: destination,
+          fullPrice: rawPrice != null ? Math.round(rawPrice) : undefined,
           offeredPrice: Math.round(finalPrice),
           vehicleType,
         },
